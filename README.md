@@ -5,7 +5,7 @@ Debian 13 (Trixie) 系统初始化脚本，带交互菜单，需以 root 运行�
 ## 运行
 
 ```bash
-wget -O debian13_setup.sh https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh && sudo bash debian13_setup.sh
+wget https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh && sudo bash debian13_setup.sh
 ```
 
 > 脚本使用交互菜单，请先下载再执行，不要使用 `wget -qO- ... | bash`（管道会占用标准输入，菜单读不到输入）。
