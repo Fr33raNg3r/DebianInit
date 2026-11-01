@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 
 . /etc/os-release
 CODENAME="${VERSION_CODENAME:-trixie}"
@@ -672,6 +672,16 @@ strip_iface_stanza() {
     return 1
 }
 
+# 用修改前的配置把网卡停掉，再用新配置拉起这块网卡。
+# 不能改完配置直接 restart networking：ifdown 读到的是新配置，
+#   DHCP -> 静态时，静态的收尾动作不会让旧的 dhcpcd 退出，它会重新拿租约并装回自己的默认路由，新网关因此不生效；
+#   静态 -> DHCP 时，DHCP 的收尾动作也清不掉旧的静态地址。
+# 忽略 SIGHUP：SSH 掉线时也要保证 ifdown 之后的 ifup 能执行完。
+ifupdown_reload() {
+    local iface="$1" oldconf="$2"
+    (trap '' HUP; ifdown -i "$oldconf" "$iface"; ifup "$iface")
+}
+
 NET_CONFIRM_FLAG="/run/net-setup-confirmed"
 RESOLVED_DNS_DROPIN="/etc/systemd/resolved.conf.d/10-debian13-setup.conf"
 
@@ -703,7 +713,7 @@ apply_ifupdown_dns() {
 
 # 备份当前网络配置并生成回滚脚本，成功时把脚本路径输出到 stdout
 prepare_net_rollback() {
-    local method="$1" conn="$2" ts bkdir rb
+    local method="$1" conn="$2" iface="$3" ts bkdir rb
     ts=$(date +%Y%m%d%H%M%S)
     bkdir="/root/net-backup-$ts"
     rb="/run/net-rollback-$ts.sh"
@@ -735,7 +745,10 @@ EOF
             # DNS 可能写在 resolv.conf 或 resolved drop-in 中，一并备份
             [ -f /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ] && cp -a /etc/resolv.conf "$bkdir/"
             [ -f "$RESOLVED_DNS_DROPIN" ] && cp -a "$RESOLVED_DNS_DROPIN" "$bkdir/"
+            # 先按当前配置把网卡停掉，还原文件后只拉起这块网卡，原因见 ifupdown_reload
             cat <<EOF > "$rb"
+trap '' HUP
+ifdown "$iface"
 cp -a "$bkdir/interfaces" /etc/network/interfaces
 [ -f "$bkdir/resolv.conf" ] && cp -a "$bkdir/resolv.conf" /etc/resolv.conf
 if [ -f "$bkdir/${RESOLVED_DNS_DROPIN##*/}" ]; then
@@ -744,7 +757,7 @@ else
     rm -f "$RESOLVED_DNS_DROPIN"
 fi
 systemctl is-active --quiet systemd-resolved && systemctl restart systemd-resolved
-systemctl restart networking
+ifup "$iface"
 EOF
             ;;
         *)
@@ -808,7 +821,7 @@ configure_network() {
 
     [ "$method" = "networkmanager" ] && conn=$(get_nm_conn "$iface")
 
-    rb=$(prepare_net_rollback "$method" "$conn")
+    rb=$(prepare_net_rollback "$method" "$conn" "$iface")
     if [ -z "$rb" ]; then
         echo "警告：未能备份原网络配置，将没有自动回滚保护"
         read -rp "仍要继续吗？[y/N]: " c
@@ -836,7 +849,10 @@ EOF
             systemctl restart systemd-networkd
             ;;
         ifupdown)
-            local ip_only netmask
+            local ip_only netmask oldconf="/tmp/interfaces.old.$$"
+            # 留一份修改前的配置，供 ifupdown_reload 按旧配置把网卡停掉
+            cp -a /etc/network/interfaces "$oldconf"
+            TMPFILES+=("$oldconf")
             ip_only="${ipaddr%%/*}"
             netmask=$(cidr_to_netmask "${ipaddr##*/}")
             strip_iface_stanza "$iface" || return
@@ -849,7 +865,7 @@ iface $iface inet static
     gateway $gateway
     dns-nameservers $dns
 EOF
-            systemctl restart networking
+            ifupdown_reload "$iface" "$oldconf"
             apply_ifupdown_dns "$dns"
             ;;
     esac
@@ -881,7 +897,7 @@ restore_dhcp() {
     echo "提示：如果 DHCP 分配的 IP 与当前不同，SSH 会断开，开启保护时会在 60 秒后自动回滚"
     read -rp "是否启用 60 秒自动回滚保护？(通过控制台操作可选 n) [Y/n]: " protect
     if [[ ! "$protect" =~ ^[Nn]$ ]]; then
-        rb=$(prepare_net_rollback "$method" "$conn")
+        rb=$(prepare_net_rollback "$method" "$conn" "$iface")
         if [ -z "$rb" ]; then
             echo "警告：未能备份原网络配置，将没有自动回滚保护"
             read -rp "仍要继续吗？[y/N]: " c
@@ -920,7 +936,7 @@ EOF
                 rm -f "$RESOLVED_DNS_DROPIN"
                 systemctl is-active --quiet systemd-resolved && systemctl restart systemd-resolved
             fi
-            systemctl restart networking
+            ifupdown_reload "$iface" "/etc/network/interfaces.bak.$ts"
             ;;
     esac
     echo "已恢复为 DHCP 自动获取，当前地址:"
