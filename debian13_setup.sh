@@ -9,7 +9,50 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.5"
+
+# ---------------------------------------------------------
+# 自更新：启动时比对远程 SCRIPT_VERSION，不同则覆盖自身并重新运行
+# 优先走 gh-proxy 加速，失败回退 GitHub 直连；网络不通时继续使用本地版本
+# ---------------------------------------------------------
+SELF_RAW_URL="https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh"
+GH_PROXY="https://gh-proxy.com/"
+
+self_update() {
+    local self remote_ver p
+    # SELF_UPDATED 非空表示刚更新完重启，避免循环
+    [ -n "$SELF_UPDATED" ] && return 0
+    command -v wget >/dev/null 2>&1 || return 0
+    self="$(readlink -f "$0" 2>/dev/null)"
+    [ -f "$self" ] || return 0
+
+    # 只读取文件开头的版本号行，grep 命中即断开，不下载整个文件
+    for p in "$GH_PROXY" ""; do
+        remote_ver="$(wget -qO- --timeout=10 -t 1 "$p$SELF_RAW_URL" 2>/dev/null \
+            | grep -m1 '^SCRIPT_VERSION=' | cut -d'"' -f2)"
+        [[ "$remote_ver" =~ ^[0-9]+(\.[0-9]+)*$ ]] && break
+        remote_ver=""
+    done
+    if [ -z "$remote_ver" ]; then
+        echo "提示：无法获取远程版本号，继续使用本地版本 v$SCRIPT_VERSION"
+        return 0
+    fi
+    [ "$remote_ver" = "$SCRIPT_VERSION" ] && return 0
+
+    echo "发现新版本 v$remote_ver (当前 v$SCRIPT_VERSION)，正在更新..."
+    if wget -qO "$self.new" --timeout=15 -t 1 "$p$SELF_RAW_URL" \
+        && head -n1 "$self.new" | grep -q '^#!' \
+        && grep -q '^SCRIPT_VERSION=' "$self.new" \
+        && bash -n "$self.new" 2>/dev/null; then
+        chmod --reference="$self" "$self.new" 2>/dev/null
+        mv -f "$self.new" "$self"
+        echo "已更新到 v$remote_ver，重新运行..."
+        SELF_UPDATED=1 exec bash "$self" "$@"
+    fi
+    rm -f "$self.new"
+    echo "提示：更新失败，继续使用本地版本 v$SCRIPT_VERSION"
+}
+self_update "$@"
 
 . /etc/os-release
 CODENAME="${VERSION_CODENAME:-trixie}"
@@ -2250,6 +2293,38 @@ set_locale() {
 # ---------------------------------------------------------
 # 9. 查看当前系统状态
 # ---------------------------------------------------------
+# 校时运行情况：优先 chrony，其次 systemd-timesyncd
+show_time_sync() {
+    if systemctl is-active --quiet chrony 2>/dev/null && command -v chronyc >/dev/null 2>&1; then
+        printf "%-10s %s
+" "校时服务" "chrony 运行中"
+        local tr
+        tr="$(chronyc tracking 2>/dev/null)"
+        if [ -n "$tr" ]; then
+            printf "%-10s %s
+" "同步状态" "$(echo "$tr" | awk -F': ' '/^Leap status/{print $2}')"
+            printf "%-10s %s
+" "当前时间源" "$(echo "$tr" | awk -F': ' '/^Reference ID/{print $2}')"
+            printf "%-10s %s
+" "层级" "$(echo "$tr" | awk -F': ' '/^Stratum/{print $2}')"
+            printf "%-10s %s
+" "时间偏差" "$(echo "$tr" | awk -F': ' '/^System time/{print $2}')"
+        else
+            printf "%-10s %s
+" "同步状态" "获取失败"
+        fi
+        echo "  时间源列表 (^* 为当前选中, Reach 为可达性):"
+        chronyc sources 2>/dev/null | sed -n '/^\^\|^=\|^#/p;/^MS/p' | sed 's/^/    /' | head -8
+    elif systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
+        printf "%-10s %s
+" "校时服务" "systemd-timesyncd 运行中"
+        timedatectl timesync-status 2>/dev/null | sed -n '/Server\|Offset\|Stratum\|Poll/p' | sed 's/^ */    /'
+    else
+        printf "%-10s %s
+" "校时服务" "未运行 (可用系统优化菜单第 14 项配置 chrony)"
+    fi
+}
+
 show_status() {
     echo "=================== 系统状态 ==================="
     printf "%-10s %s\n" "主机名"   "$(hostname)"

@@ -5,24 +5,14 @@ Debian 13 (Trixie) 系统初始化脚本，带交互菜单，需以 root 运行�
 ## 运行
 
 ```bash
-f=debian13_setup.sh
-u=https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/$f
-lv=$(grep -m1 '^SCRIPT_VERSION=' "$f" 2>/dev/null)
-for p in https://gh-proxy.com/ ""; do
-  rv=$(wget -qO- --timeout=10 "$p$u" | grep -m1 '^SCRIPT_VERSION=')
-  [ -n "$rv" ] && break
-done
-if [ -z "$lv" ] || { [ -n "$rv" ] && [ "$lv" != "$rv" ]; }; then
-  wget -qO "$f.new" "$p$u" && mv -f "$f.new" "$f"
-fi
-bash "$f"
+wget -qO debian13_setup.sh --timeout=10 -t 1 https://gh-proxy.com/https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh || wget -qO debian13_setup.sh --timeout=10 -t 1 https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh; bash debian13_setup.sh
 ```
 
-逻辑：先走 gh-proxy 加速读取远程脚本开头的版本号（失败回退 GitHub 直连，只读取开头，不下载整个文件）；本地不存在或版本号不同才下载新版并覆盖同名文件，版本一致则直接运行本地脚本。需以 root 运行，不使用 sudo。
+- 需以 root 运行，不使用 sudo。第一条 wget 走 gh-proxy 加速，失败自动回退 GitHub 直连。
+- 脚本内置自更新：之后直接运行 `bash debian13_setup.sh`，启动时会比对远程 `SCRIPT_VERSION`，版本不同才下载并覆盖自身，一致则不下载；网络不通时继续使用本地版本。
+- 脚本使用交互菜单，请先下载再执行，不要使用 `wget -qO- ... | bash`（管道会占用标准输入，菜单读不到输入）。
 
-> **维护约定**：每次修改脚本都必须同步递增 `SCRIPT_VERSION`（`.sh` 与 `.txt` 两处），否则用户不会拿到新版。
-
-> 脚本使用交互菜单，请先下载再执行，不要使用 `wget -qO- ... | bash`（管道会占用标准输入，菜单读不到输入）。
+> **维护约定**：每次修改脚本都必须同步递增 `SCRIPT_VERSION`，否则用户不会拿到新版。
 
 ## 基本功能
 
@@ -40,4 +30,3 @@ bash "$f"
 | 文件 | 说明 |
 | --- | --- |
 | `debian13_setup.sh` | 初始化脚本本体，直接运行 |
-| `debian13_setup.txt` | 生成器：在 Debian 上执行 `bash debian13_setup.txt` 会在当前目录生成 `debian13_setup.sh` |
