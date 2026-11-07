@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Debian 13 (Trixie) 系统初始化脚本
-# 使用方法：chmod +x debian13_setup.sh && sudo ./debian13_setup.sh
+# 使用方法：chmod +x debian13_setup.sh && ./debian13_setup.sh
 #
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.4"
 
 . /etc/os-release
 CODENAME="${VERSION_CODENAME:-trixie}"
@@ -2283,6 +2283,7 @@ show_status() {
 # ---------------------------------------------------------
 REINSTALL_URLS=(
     "https://cnb.cool/bin456789/reinstall/-/git/raw/main/reinstall.sh"
+    "https://gh-proxy.com/https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh"
     "https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh"
 )
 

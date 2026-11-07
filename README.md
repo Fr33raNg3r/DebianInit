@@ -5,8 +5,22 @@ Debian 13 (Trixie) 系统初始化脚本，带交互菜单，需以 root 运行�
 ## 运行
 
 ```bash
-wget https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/debian13_setup.sh && sudo bash debian13_setup.sh
+f=debian13_setup.sh
+u=https://raw.githubusercontent.com/Fr33raNg3r/DebianInit/main/$f
+lv=$(grep -m1 '^SCRIPT_VERSION=' "$f" 2>/dev/null)
+for p in https://gh-proxy.com/ ""; do
+  rv=$(wget -qO- --timeout=10 "$p$u" | grep -m1 '^SCRIPT_VERSION=')
+  [ -n "$rv" ] && break
+done
+if [ -z "$lv" ] || { [ -n "$rv" ] && [ "$lv" != "$rv" ]; }; then
+  wget -qO "$f.new" "$p$u" && mv -f "$f.new" "$f"
+fi
+bash "$f"
 ```
+
+逻辑：先走 gh-proxy 加速读取远程脚本开头的版本号（失败回退 GitHub 直连，只读取开头，不下载整个文件）；本地不存在或版本号不同才下载新版并覆盖同名文件，版本一致则直接运行本地脚本。需以 root 运行，不使用 sudo。
+
+> **维护约定**：每次修改脚本都必须同步递增 `SCRIPT_VERSION`（`.sh` 与 `.txt` 两处），否则用户不会拿到新版。
 
 > 脚本使用交互菜单，请先下载再执行，不要使用 `wget -qO- ... | bash`（管道会占用标准输入，菜单读不到输入）。
 
