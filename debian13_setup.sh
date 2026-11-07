@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-SCRIPT_VERSION="1.0.5"
+SCRIPT_VERSION="1.0.6"
 
 # ---------------------------------------------------------
 # 自更新：启动时比对远程 SCRIPT_VERSION，不同则覆盖自身并重新运行
@@ -2296,32 +2296,24 @@ set_locale() {
 # 校时运行情况：优先 chrony，其次 systemd-timesyncd
 show_time_sync() {
     if systemctl is-active --quiet chrony 2>/dev/null && command -v chronyc >/dev/null 2>&1; then
-        printf "%-10s %s
-" "校时服务" "chrony 运行中"
+        printf "%-10s %s\n" "校时服务" "chrony 运行中"
         local tr
         tr="$(chronyc tracking 2>/dev/null)"
         if [ -n "$tr" ]; then
-            printf "%-10s %s
-" "同步状态" "$(echo "$tr" | awk -F': ' '/^Leap status/{print $2}')"
-            printf "%-10s %s
-" "当前时间源" "$(echo "$tr" | awk -F': ' '/^Reference ID/{print $2}')"
-            printf "%-10s %s
-" "层级" "$(echo "$tr" | awk -F': ' '/^Stratum/{print $2}')"
-            printf "%-10s %s
-" "时间偏差" "$(echo "$tr" | awk -F': ' '/^System time/{print $2}')"
+            printf "%-10s %s\n" "同步状态" "$(echo "$tr" | awk -F': ' '/^Leap status/{print $2}')"
+            printf "%-10s %s\n" "当前时间源" "$(echo "$tr" | awk -F': ' '/^Reference ID/{print $2}')"
+            printf "%-10s %s\n" "层级" "$(echo "$tr" | awk -F': ' '/^Stratum/{print $2}')"
+            printf "%-10s %s\n" "时间偏差" "$(echo "$tr" | awk -F': ' '/^System time/{print $2}')"
         else
-            printf "%-10s %s
-" "同步状态" "获取失败"
+            printf "%-10s %s\n" "同步状态" "获取失败"
         fi
         echo "  时间源列表 (^* 为当前选中, Reach 为可达性):"
         chronyc sources 2>/dev/null | sed -n '/^\^\|^=\|^#/p;/^MS/p' | sed 's/^/    /' | head -8
     elif systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-        printf "%-10s %s
-" "校时服务" "systemd-timesyncd 运行中"
+        printf "%-10s %s\n" "校时服务" "systemd-timesyncd 运行中"
         timedatectl timesync-status 2>/dev/null | sed -n '/Server\|Offset\|Stratum\|Poll/p' | sed 's/^ */    /'
     else
-        printf "%-10s %s
-" "校时服务" "未运行 (可用系统优化菜单第 14 项配置 chrony)"
+        printf "%-10s %s\n" "校时服务" "未运行 (可用系统优化菜单第 14 项配置 chrony)"
     fi
 }
 
@@ -2332,6 +2324,8 @@ show_status() {
     printf "%-10s %s\n" "内核"     "$(uname -r)"
     printf "%-10s %s\n" "架构"     "$(dpkg --print-architecture)"
     printf "%-10s %s\n" "时区"     "$(timedatectl show -p Timezone --value 2>/dev/null)"
+    printf "%-10s %s\n" "系统时间" "$(date '+%F %T %Z')  (系统时钟已同步: $(timedatectl show -p NTPSynchronized --value 2>/dev/null | sed 's/^yes$/是/; s/^no$/否/'))"
+    show_time_sync
     printf "%-10s %s\n" "运行时长" "$(uptime -p 2>/dev/null || uptime)"
     printf "%-10s %s\n" "内存"     "$(free -h | awk '/^Mem:/{print $3" / "$2}')"
     printf "%-10s %s\n" "根分区"   "$(df -h / | awk 'NR==2{print $3" / "$2" ("$5")"}')"
